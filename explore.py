@@ -157,9 +157,11 @@ def _count(rows, i):
             out[r[i]] = out.get(r[i], 0) + 1
     return out
 
-def groups(header, rows, info, k):
+def groups(header, rows, info, k, features=None):
     idx = []
     for i, c in enumerate(info):
+        if features is not None and c["name"] not in features:
+            continue
         if c["type"] == "numeric":
             present = [v for v in (r[i] for r in rows) if not ml.is_missing(v)]
             if present and not ml.looks_like_id(present):
@@ -180,3 +182,82 @@ def groups(header, rows, info, k):
                 overall=X.mean(axis=0).tolist(),
                 clusters=[dict(size=int((lab == j).sum()), means=X[lab == j].mean(axis=0).tolist())
                           for j in range(k) if (lab == j).any()])
+
+def anomalies(header, rows, info, features=None):
+    idx = []
+    for i, c in enumerate(info):
+        if features is not None and c["name"] not in features:
+            continue
+        if c["type"] == "numeric":
+            present = [v for v in (r[i] for r in rows) if not ml.is_missing(v)]
+            if present and not ml.looks_like_id(present):
+                idx.append(i)
+    if len(idx) < 1:
+        raise ValueError("Finding anomalies needs at least one numeric column.")
+    X = np.array([_num(rows, i) for i in idx]).T
+    
+    # Impute NaNs with column means
+    col_means = np.nanmean(X, axis=0)
+    inds = np.where(np.isnan(X))
+    X[inds] = np.take(col_means, inds[1])
+    
+    sd = X.std(axis=0)
+    Z = (X - X.mean(axis=0)) / np.where(sd == 0, 1, sd)
+    scores = (Z**2).sum(axis=1)
+    
+    top_k = min(5, len(X))
+    top_indices = np.argsort(-scores)[:top_k]
+    
+    results = []
+    for i in top_indices:
+        results.append({
+            "row": int(i + 1),
+            "score": float(scores[i]),
+            "values": {header[j]: rows[i][j] for j in idx}
+        })
+        
+    return dict(features=[header[i] for i in idx], anomalies=results)
+
+def pca_analysis(header, rows, info, features=None):
+    idx = []
+    for i, c in enumerate(info):
+        if features is not None and c["name"] not in features:
+            continue
+        if c["type"] == "numeric":
+            present = [v for v in (r[i] for r in rows) if not ml.is_missing(v)]
+            if present and not ml.looks_like_id(present) and c["unique"] >= 2:
+                idx.append(i)
+    if len(idx) < 2:
+        raise ValueError("Principal Component Analysis (PCA) requires at least two numeric columns with variation.")
+    X = np.array([_num(rows, i) for i in idx]).T
+    col_means = np.nanmean(X, axis=0)
+    inds = np.where(np.isnan(X))
+    X[inds] = np.take(col_means, inds[1])
+    sd = X.std(axis=0)
+    Z = (X - X.mean(axis=0)) / np.where(sd == 0, 1, sd)
+    
+    cov = np.cov(Z, rowvar=False)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = np.maximum(eigvals[order], 0.0)
+    eigvecs = eigvecs[:, order]
+    tot = float(eigvals.sum()) or 1.0
+    explained = (eigvals / tot).tolist()
+    cum = np.cumsum(explained).tolist()
+    
+    feat_names = [header[i] for i in idx]
+    components = []
+    for k in range(min(4, len(feat_names))):
+        vec = eigvecs[:, k]
+        top_idx = np.argsort(-np.abs(vec))[:4]
+        loadings = [[feat_names[j], float(vec[j])] for j in top_idx]
+        components.append({
+            "pc": f"PC{k+1}",
+            "variance_pct": round(explained[k] * 100, 1),
+            "cumulative_pct": round(cum[k] * 100, 1),
+            "loadings": loadings
+        })
+    proj = Z @ eigvecs[:, :2]
+    pick = np.random.default_rng(0).permutation(len(proj))[:300]
+    pts = proj[pick].tolist()
+    return dict(features=feat_names, rows_used=int(len(X)), components=components, points=pts)

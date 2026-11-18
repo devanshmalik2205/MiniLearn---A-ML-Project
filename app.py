@@ -14,10 +14,13 @@ import explore as ex
 import health as hl
 import json
 import predict as pr
+import model_hub as mh
+import explainability as ex_ai
 
 app = Flask(__name__, static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB
 MAX_ROWS = 2000  # larger files are sampled, so training stays quick
+_LAST_UPLOAD = {"filename": None, "csv_text": None}
 
 
 def read_upload(upload):
@@ -29,6 +32,8 @@ def read_upload(upload):
     except UnicodeDecodeError:
         text = raw.decode("cp1252", errors="replace")
         notes.append(dict(level="info", title="The file was not UTF-8", detail="It was read as Windows-1252 (Excel's usual encoding). If accented letters look wrong, save it as 'CSV UTF-8'."))
+    _LAST_UPLOAD["filename"] = upload.filename or "dataset.csv"
+    _LAST_UPLOAD["csv_text"] = text
     first = text.split("\n", 1)[0]
     delim = max(",;\t|", key=first.count) if any(d in first for d in ",;\t|") else ","
     if delim != ",":
@@ -67,6 +72,13 @@ def home():
     return send_from_directory("static", "index.html")
 
 
+@app.route("/api/current_dataset", methods=["GET"])
+def current_dataset_route():
+    if not _LAST_UPLOAD["csv_text"]:
+        return jsonify(error="No dataset cached yet."), 404
+    return jsonify(filename=_LAST_UPLOAD["filename"], csv_text=_LAST_UPLOAD["csv_text"])
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     upload = request.files.get("file")
@@ -85,7 +97,13 @@ def analyze():
     target = request.form.get("target")
     if not target:
         advice = hl.check(header, rows, columns, notes)
-        return jsonify(rows=len(rows), columns=columns, advice=advice, readiness=hl.readiness(advice),
+        max_preview = min(len(rows), 500)
+        first_rows = [dict(row_num=i + 1, values=rows[i]) for i in range(max_preview)]
+        rng = np.random.default_rng()
+        rand_idxs = rng.choice(len(rows), max_preview, replace=False) if len(rows) > max_preview else rng.permutation(len(rows))
+        sample_rows = [dict(row_num=int(i) + 1, values=rows[int(i)]) for i in rand_idxs]
+        return jsonify(rows=len(rows), header=header, first_rows=first_rows, sample_rows=sample_rows,
+                       columns=columns, advice=advice, readiness=hl.readiness(advice),
                        about=hl.about(header, rows, columns))
 
     # Step 2: train and rank
@@ -94,7 +112,12 @@ def analyze():
     tune = request.form.get("tune", "1") == "1"
     drop = [c for c in request.form.get("exclude", "").split("|") if c in header and c != target]
     header, rows = drop_columns(header, rows, drop)
-    task = ml.detect_task(columns, target)
+    
+    force_task = request.form.get("force_task")
+    if force_task in ["regression", "classification"]:
+        task = force_task
+    else:
+        task = ml.detect_task(columns, target)
 
     sampled = len(rows) > MAX_ROWS
     if sampled:
@@ -111,7 +134,7 @@ def analyze():
             return jsonify(error=f"'{target}' has {len(set(y))} different values, so it behaves like an ID and there is nothing sensible to learn. Pick a column with fewer than 50 categories, or a numeric column."), 400
         if task == "classification" and len(set(y)) < 2:
             return jsonify(error="The target column has only one distinct value, so there is nothing to predict."), 400
-        report = ml.rank_models(X, y, task, names, tune)
+        report = ml.rank_models(X, y, task, names, tune, labels=labels)
     except Exception as err:
         return jsonify(error=f"Could not train on this file: {err}"), 400
 
@@ -148,9 +171,15 @@ def explore_route():
             if a not in header or b not in header:
                 return jsonify(error="Pick two columns from the file."), 400
             return jsonify(ex.compare(header, rows, info, a, b))
+        feats_param = request.form.get("features")
+        feats = [f for f in feats_param.split("|") if f in header] if feats_param else None
         if mode == "groups":
             k = max(2, min(6, int(request.form.get("k", 3))))
-            return jsonify(ex.groups(header, rows, info, k))
+            return jsonify(ex.groups(header, rows, info, k, features=feats))
+        if mode == "anomalies":
+            return jsonify(ex.anomalies(header, rows, info, features=feats))
+        if mode == "pca":
+            return jsonify(ex.pca_analysis(header, rows, info, features=feats))
         return jsonify(error="Unknown goal."), 400
     except ValueError as err:
         return jsonify(error=str(err)), 400
@@ -168,7 +197,11 @@ def predict_route():
     if target not in header:
         return jsonify(error="That column is not in the file."), 400
     header, rows = drop_columns(header, rows, [c for c in request.form.get("exclude", "").split("|") if c in header and c != target])
-    task = ml.detect_task(ml.profile_columns(header, rows), target)
+    force_task = request.form.get("force_task")
+    if force_task in ["regression", "classification"]:
+        task = force_task
+    else:
+        task = ml.detect_task(ml.profile_columns(header, rows), target)
     X, y, labels, names = ml.prepare_data(header, rows, target, task)
     spec = pr.form_spec(header, rows, target, names)
     try:
@@ -176,6 +209,165 @@ def predict_route():
     except ValueError:
         return jsonify(error="Please type plain numbers in the number boxes."), 400
     return jsonify(answers=answers)
+
+
+@app.route("/api/models", methods=["GET"])
+def list_models_route():
+    return jsonify(mh.list_saved_models())
+
+
+@app.route("/api/models/save", methods=["POST"])
+def save_model_route():
+    upload = request.files.get("file")
+    if upload is None:
+        return jsonify(error="Choose a CSV file first."), 400
+    header, rows, _ = read_upload(upload)
+    dataset_name = request.form.get("dataset_name") or upload.filename or "dataset.csv"
+    target = request.form.get("target")
+    if not target or target not in header:
+        return jsonify(error="Choose a valid target column first."), 400
+    force_task = request.form.get("force_task")
+    tune = request.form.get("tune", "0") == "1"
+    exclude = [c for c in request.form.get("exclude", "").split("|") if c]
+    selected_model = request.form.get("model_name", "")
+    custom_name = request.form.get("custom_name", "")
+    overwrite_id = request.form.get("overwrite_model_id", "") or None
+    try:
+        saved = mh.save_model_to_hub(
+            header=header, rows=rows, dataset_name=dataset_name, target=target,
+            force_task=force_task, tune=tune, exclude_cols=exclude,
+            selected_model_name=selected_model, custom_name=custom_name,
+            overwrite_model_id=overwrite_id
+        )
+        return jsonify(saved)
+    except Exception as err:
+        return jsonify(error=f"Could not save model: {err}"), 400
+
+
+@app.route("/api/models/<model_id>", methods=["GET"])
+def get_model_route(model_id):
+    try:
+        return jsonify(mh.get_model_details(model_id))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/load", methods=["POST"])
+def load_model_route(model_id):
+    try:
+        loaded = mh.load_model_artifact(model_id)
+        details = mh.get_model_details(model_id)
+        return jsonify({
+            "status": "loaded",
+            "retrained": False,
+            "message": f"Loaded '{details['display_name']}' (Version {details['version']}) and its fitted preprocessing pipeline without retraining.",
+            "model": details,
+            "form_spec": loaded["preprocessing"]["form_spec"]
+        })
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=f"Failed to load saved model artifact: {err}"), 400
+
+
+@app.route("/api/models/<model_id>/predict", methods=["POST"])
+def predict_saved_model_route(model_id):
+    try:
+        body = request.get_json(silent=True) or {}
+        inputs = body.get("inputs") if "inputs" in body else json.loads(request.form.get("inputs", "{}"))
+        strict = bool(body.get("strict", False))
+        res = mh.predict_with_saved_model(model_id, inputs, strict=strict)
+        return jsonify(res)
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/compare", methods=["POST"])
+def compare_models_route():
+    try:
+        body = request.get_json(silent=True) or {}
+        model_ids = body.get("model_ids", [])
+        return jsonify(mh.compare_saved_models(model_ids))
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>", methods=["DELETE"])
+def delete_model_route(model_id):
+    try:
+        return jsonify(mh.delete_saved_model(model_id))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/download", methods=["GET"])
+def download_model_route(model_id):
+    try:
+        kind = request.args.get("kind", "artifact")
+        payload, filename = mh.get_download_payload(model_id, kind=kind)
+        resp = jsonify(payload)
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/explain", methods=["GET"])
+def explain_model_route(model_id):
+    try:
+        metric = request.args.get("metric")
+        pdp_feature = request.args.get("pdp_feature")
+        return jsonify(ex_ai.get_model_explainability(model_id, metric_key=metric, pdp_feature=pdp_feature))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/explain/local", methods=["POST"])
+def explain_local_route(model_id):
+    try:
+        body = request.get_json(silent=True) or {}
+        inputs = body.get("inputs", {})
+        actual = body.get("actual")
+        return jsonify(ex_ai.explain_local_prediction(model_id, inputs, actual_value=actual))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/explain/pdp", methods=["POST"])
+def explain_pdp_route(model_id):
+    try:
+        body = request.get_json(silent=True) or {}
+        feature_name = body.get("feature_name")
+        return jsonify(ex_ai.compute_partial_dependence(model_id, feature_name=feature_name))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
+
+
+@app.route("/api/models/<model_id>/explain/whatif", methods=["POST"])
+def explain_whatif_route(model_id):
+    try:
+        body = request.get_json(silent=True) or {}
+        orig_inputs = body.get("original_inputs", {})
+        mod_inputs = body.get("modified_inputs", {})
+        return jsonify(ex_ai.run_what_if_analysis(model_id, orig_inputs, mod_inputs))
+    except KeyError as err:
+        return jsonify(error=str(err)), 404
+    except Exception as err:
+        return jsonify(error=str(err)), 400
 
 
 if __name__ == "__main__":

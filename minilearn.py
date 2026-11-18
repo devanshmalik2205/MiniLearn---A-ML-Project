@@ -81,6 +81,7 @@ def prepare_data(header, rows, target, task):
 
     # the target column becomes y
     if task == "regression":
+        rows = [r for r in rows if is_number(r[t])]
         y = np.array([float(r[t]) for r in rows])
         labels = None
     else:
@@ -126,13 +127,21 @@ class Baseline:
 
     def fit(self, X, y):
         if self.task == "classification":
-            self.value = np.bincount(y).argmax()     # most common class
+            self.n_classes = int(y.max()) + 1
+            counts = np.bincount(y, minlength=self.n_classes)
+            self.value = int(counts.argmax())     # most common class
+            self.priors = counts / max(len(y), 1)
         else:
-            self.value = y.mean()                    # average number
+            self.value = float(y.mean())          # average number
         return self
 
     def predict(self, X):
         return np.full(len(X), self.value)
+
+    def predict_scores(self, X):
+        if self.task == "classification":
+            return np.tile(self.priors, (len(X), 1)), "prior"
+        return self.predict(X), "regression"
 
 
 class RidgeRegression:
@@ -158,6 +167,7 @@ class LogisticRegression:
 
     def fit(self, X, y):
         self.classes = np.unique(y)
+        self.n_classes = int(y.max()) + 1
         Xb = np.c_[np.ones(len(X)), X]
         self.W = np.zeros((len(self.classes), Xb.shape[1]))   # one row of weights per class
         for i, c in enumerate(self.classes):
@@ -172,6 +182,21 @@ class LogisticRegression:
         Xb = np.c_[np.ones(len(X)), X]
         return self.classes[(Xb @ self.W.T).argmax(axis=1)]
 
+    def predict_scores(self, X):
+        Xb = np.c_[np.ones(len(X)), X]
+        z = np.clip(Xb @ self.W.T, -30, 30)
+        p = 1.0 / (1.0 + np.exp(-z))
+        out = np.zeros((len(X), self.n_classes))
+        for i, c in enumerate(self.classes):
+            out[:, int(c)] = p[:, i]
+        if self.n_classes == 2 and len(self.classes) == 2:
+            # Ensure exact binary probability normalization
+            out[:, int(self.classes[0])] = 1.0 - out[:, int(self.classes[1])]
+        else:
+            row_sum = out.sum(axis=1, keepdims=True)
+            out = np.where(row_sum > 0, out / row_sum, 1.0 / max(self.n_classes, 1))
+        return out, "probability"
+
 
 class LinearSVM:
     def __init__(self, lr=0.05, epochs=200, reg=0.01):
@@ -181,6 +206,7 @@ class LinearSVM:
 
     def fit(self, X, y):
         self.classes = np.unique(y)
+        self.n_classes = int(y.max()) + 1
         Xb = np.c_[np.ones(len(X)), X]
         self.W = np.zeros((len(self.classes), Xb.shape[1]))
         for i, c in enumerate(self.classes):
@@ -195,6 +221,16 @@ class LinearSVM:
         Xb = np.c_[np.ones(len(X)), X]
         return self.classes[(Xb @ self.W.T).argmax(axis=1)]
 
+    def predict_scores(self, X):
+        Xb = np.c_[np.ones(len(X)), X]
+        margins = Xb @ self.W.T
+        out = np.full((len(X), self.n_classes), -1e9)
+        for i, c in enumerate(self.classes):
+            out[:, int(c)] = margins[:, i]
+        if self.n_classes == 2 and len(self.classes) == 2:
+            out[:, int(self.classes[0])] = -out[:, int(self.classes[1])]
+        return out, "decision_score"
+
 
 class KNN:
     def __init__(self, task, k=5):
@@ -204,6 +240,7 @@ class KNN:
     def fit(self, X, y):
         self.X = X
         self.y = y
+        self.n_classes = int(y.max()) + 1 if self.task == "classification" else 0
         return self
 
     def predict(self, X):
@@ -220,10 +257,25 @@ class KNN:
                 guesses.extend(nearest.mean(axis=1))                       # the neighbours are averaged
         return np.array(guesses)
 
+    def predict_scores(self, X):
+        if self.task != "classification":
+            return self.predict(X), "regression"
+        k = min(self.k, len(self.X))
+        train_sq = (self.X ** 2).sum(axis=1)
+        probs = []
+        for start in range(0, len(X), 256):
+            rows = X[start:start + 256]
+            d = (rows ** 2).sum(axis=1)[:, None] + train_sq[None, :] - 2 * rows @ self.X.T
+            nearest = self.y[np.argpartition(d, k - 1, axis=1)[:, :k]]
+            for r in nearest:
+                probs.append(np.bincount(r, minlength=self.n_classes) / max(k, 1))
+        return np.array(probs), "probability"
+
 
 class GaussianNaiveBayes:
     def fit(self, X, y):
         self.classes = np.unique(y)
+        self.n_classes = int(y.max()) + 1
         self.means = np.array([X[y == c].mean(axis=0) for c in self.classes])
         self.vars = np.array([X[y == c].var(axis=0) + 1e-9 for c in self.classes])
         self.priors = np.array([(y == c).mean() for c in self.classes])
@@ -236,6 +288,21 @@ class GaussianNaiveBayes:
                                    + (X - self.means[i]) ** 2 / self.vars[i]).sum(axis=1)
             scores.append(np.log(self.priors[i]) + fit_to_class)
         return self.classes[np.argmax(scores, axis=0)]
+
+    def predict_scores(self, X):
+        log_probs = []
+        for i in range(len(self.classes)):
+            fit_to_class = -0.5 * (np.log(2 * np.pi * self.vars[i])
+                                   + (X - self.means[i]) ** 2 / self.vars[i]).sum(axis=1)
+            log_probs.append(np.log(self.priors[i]) + fit_to_class)
+        log_probs = np.array(log_probs).T  # n_samples x len(classes)
+        max_lp = log_probs.max(axis=1, keepdims=True)
+        exp_lp = np.exp(np.clip(log_probs - max_lp, -40, 0))
+        post = exp_lp / np.maximum(exp_lp.sum(axis=1, keepdims=True), 1e-12)
+        out = np.zeros((len(X), self.n_classes))
+        for i, c in enumerate(self.classes):
+            out[:, int(c)] = post[:, i]
+        return out, "probability"
 
 
 class DecisionTree:
@@ -259,9 +326,16 @@ class DecisionTree:
         return y.var()                       # how spread out are the numbers?
 
     def _leaf(self, y):
+        imp = float(self._impurity(y)) if len(y) > 0 else 0.0
         if self.task == "classification":
-            return {"value": int(np.bincount(y, minlength=self.n_classes).argmax())}
-        return {"value": float(y.mean())}
+            counts = np.bincount(y, minlength=self.n_classes)
+            return {
+                "value": int(counts.argmax()),
+                "probs": (counts / max(len(y), 1)).tolist(),
+                "samples": int(len(y)),
+                "impurity": round(imp, 4)
+            }
+        return {"value": float(y.mean()), "samples": int(len(y)), "impurity": round(imp, 4)}
 
     def _grow(self, X, y, depth):
         too_deep = depth >= self.max_depth
@@ -274,6 +348,8 @@ class DecisionTree:
         feature, threshold = split
         left = X[:, feature] <= threshold
         return {"feature": feature, "threshold": threshold,
+                "samples": int(len(y)),
+                "impurity": round(float(self._impurity(y)), 4),
                 "left": self._grow(X[left], y[left], depth + 1),
                 "right": self._grow(X[~left], y[~left], depth + 1)}
 
@@ -325,6 +401,20 @@ class DecisionTree:
             out.append(node["value"])
         return np.array(out)
 
+    def predict_scores(self, X):
+        if self.task != "classification":
+            return self.predict(X), "regression"
+        out = []
+        for row in X:
+            node = self.root
+            while "value" not in node:
+                if row[node["feature"]] <= node["threshold"]:
+                    node = node["left"]
+                else:
+                    node = node["right"]
+            out.append(node["probs"])
+        return np.array(out), "probability"
+
 
 class RandomForest:
     def __init__(self, task, n_trees=15, max_depth=6):
@@ -334,11 +424,13 @@ class RandomForest:
 
     def fit(self, X, y):
         rng = np.random.default_rng(0)
+        self.n_classes = int(y.max()) + 1 if self.task == "classification" else 0
         per_split = max(1, int(np.sqrt(X.shape[1])))
         self.trees = []
         for i in range(self.n_trees):
             sample = rng.integers(0, len(y), len(y))      # draw rows with repeats
             tree = DecisionTree(self.task, self.max_depth, max_features=per_split, seed=i)
+            tree.n_classes = self.n_classes
             self.trees.append(tree.fit(X[sample], y[sample]))
         return self
 
@@ -347,6 +439,19 @@ class RandomForest:
         if self.task == "classification":
             return np.array([np.bincount(col.astype(int)).argmax() for col in votes.T])
         return votes.mean(axis=0)
+
+    def predict_scores(self, X):
+        if self.task != "classification":
+            return self.predict(X), "regression"
+        tree_probs = []
+        for tree in self.trees:
+            p, _ = tree.predict_scores(X)
+            if p.shape[1] < self.n_classes:
+                pad = np.zeros((len(X), self.n_classes))
+                pad[:, :p.shape[1]] = p
+                p = pad
+            tree_probs.append(p)
+        return np.mean(tree_probs, axis=0), "probability"
 
 
 def accuracy(y, p):
@@ -371,6 +476,28 @@ def r2(y, p):
 
 def rmse(y, p):
     return float(np.sqrt(((y - p) ** 2).mean()))
+
+
+def mae(y, p):
+    return float(np.abs(y - p).mean())
+
+
+def macro_precision(y, p):
+    scores = []
+    for c in np.unique(y):
+        tp = ((p == c) & (y == c)).sum()
+        fp = ((p == c) & (y != c)).sum()
+        scores.append(tp / (tp + fp) if (tp + fp) > 0 else 0.0)
+    return float(np.mean(scores))
+
+
+def macro_recall(y, p):
+    scores = []
+    for c in np.unique(y):
+        tp = ((p == c) & (y == c)).sum()
+        fn = ((p != c) & (y == c)).sum()
+        scores.append(tp / (tp + fn) if (tp + fn) > 0 else 0.0)
+    return float(np.mean(scores))
 
 
 METRICS = {
@@ -401,13 +528,18 @@ def cross_validate(make_model, X, y, task, repeats=3, folds=5, seed=0):
             X_train, X_test = scale(X[train], X[test])
             model = make_model().fit(X_train, y[train])
             guess = model.predict(X_test)
-            main_scores.append(main_metric(y[test], guess))
-            extra_scores.append(extra_metric(y[test], guess))
+            main_scores.append(float(main_metric(y[test], guess)))
+            extra_scores.append(float(extra_metric(y[test], guess)))
             # how well does it do on the rows it learned from? (used for the overfitting check)
-            train_scores.append(main_metric(y[train], model.predict(X_train)))
+            train_scores.append(float(main_metric(y[train], model.predict(X_train))))
     return {"score": float(np.mean(main_scores)),
             "spread": float(np.std(main_scores)),     # how much it changes between folds
+            "min_score": float(np.min(main_scores)),
+            "max_score": float(np.max(main_scores)),
+            "fold_scores": [round(s, 4) for s in main_scores],
             "extra": float(np.mean(extra_scores)),
+            "extra_spread": float(np.std(extra_scores)),
+            "fold_extra_scores": [round(s, 4) for s in extra_scores],
             "train_score": float(np.mean(train_scores)),
             "seconds": time.time() - start}
 
@@ -479,14 +611,28 @@ def choose_settings(models, X, y, task, tune=True):
     for name, make_model in models:
         if tune and name in TUNING:
             best = None
+            history = []
+            default_cv = cross_validate(make_model, X, y, task, repeats=1, folds=3, seed=100)
             for label, candidate in TUNING[name]:
-                score = cross_validate(candidate, X, y, task, repeats=1, folds=3, seed=100)["score"]
+                cv = cross_validate(candidate, X, y, task, repeats=1, folds=3, seed=100)
+                score = cv["score"]
+                history.append({
+                    "setting": label,
+                    "score": round(float(score), 4),
+                    "spread": round(float(cv["spread"]), 4),
+                    "extra": round(float(cv["extra"]), 4),
+                    "train_score": round(float(cv["train_score"]), 4)
+                })
                 if best is None or score > best[0]:
                     best = (score, label, candidate)
             chosen.append({"name": f"{name} [{best[1]}]", "base": name,
-                           "setting": best[1], "make": best[2]})
+                           "setting": best[1], "make": best[2],
+                           "default_score": round(float(default_cv["score"]), 4),
+                           "tuned_score": round(float(best[0]), 4),
+                           "tuning_history": history})
         else:
-            chosen.append({"name": name, "base": name, "setting": "default", "make": make_model})
+            chosen.append({"name": name, "base": name, "setting": "default", "make": make_model,
+                           "default_score": None, "tuned_score": None, "tuning_history": []})
     return chosen
 
 
@@ -603,7 +749,7 @@ def explain_models(results, facts):
     return all_notes
 
 
-def rank_models(X, y, task, names=None, tune=True):
+def rank_models(X, y, task, names=None, tune=True, labels=None):
     if names is None:
         names = [f"feature {j}" for j in range(X.shape[1])]
     main_metric, score_name, extra_metric, extra_name = METRICS[task]
@@ -620,21 +766,41 @@ def rank_models(X, y, task, names=None, tune=True):
     results = []
     for item in chosen:
         result = cross_validate(item["make"], X[dev], y[dev], task)
-        result.update(name=item["name"], base=item["base"], setting=item["setting"], make=item["make"])
+        result.update(
+            name=item["name"], base=item["base"], setting=item["setting"], make=item["make"],
+            default_score=item.get("default_score"), tuned_score=item.get("tuned_score"),
+            tuning_history=item.get("tuning_history", [])
+        )
         results.append(result)
-    results.sort(key=lambda r: r["score"], reverse=True)
+
+    # Multi-criteria selection: for imbalanced classification (majority > 70%), prioritize Macro F1 + CV stability
+    is_imbalanced = (task == "classification" and float(np.bincount(y[dev]).max() / len(dev)) > 0.70)
+    if is_imbalanced:
+        results.sort(key=lambda r: (r["extra"] - 0.15 * r["extra_spread"], r["score"]), reverse=True)
+    else:
+        results.sort(key=lambda r: (r["score"] - 0.1 * r["spread"], r["extra"]), reverse=True)
 
     # 4. compare with the baseline and spot ties
-    baseline_score = next(r["score"] for r in results if r["base"].startswith("Baseline"))
+    baseline_res = next(r for r in results if r["base"].startswith("Baseline"))
+    baseline_score = baseline_res["score"]
+    baseline_extra = baseline_res["extra"]
     best = results[0]
     for r in results:
         r["vs_baseline"] = r["score"] - baseline_score
+        r["extra_vs_baseline"] = r["extra"] - baseline_extra
         gap = best["score"] - r["score"]
-        r["tie"] = r is not best and gap < max(best["spread"], r["spread"])
+        r["tie"] = r is not best and abs(gap) < max(best["spread"], r["spread"])
 
-    # 5. one final check of the winner on the locked rows, plus what it relied on
+    # 5. Evaluate every model on the locked-away 20% test rows (preprocessing fitted ONLY on dev)
     X_train, X_test = scale(X[dev], X[locked])
-    best_model = best["make"]().fit(X_train, y[dev])
+    fitted_models = {}
+    for r in results:
+        t0 = time.time()
+        m = r["make"]().fit(X_train, y[dev])
+        r["fit_seconds"] = time.time() - t0
+        fitted_models[r["name"]] = m
+
+    best_model = fitted_models[best["name"]]
     final_score = main_metric(y[locked], best_model.predict(X_test))
     guess = best_model.predict(X_test)
     extra = {}
@@ -648,25 +814,45 @@ def rank_models(X, y, task, names=None, tune=True):
         pick = np.random.default_rng(1).permutation(len(locked))[:150]
         extra["scatter"] = [[float(y[locked][i]), float(guess[i])] for i in pick]
     drops = permutation_importance(best_model, X_test, y[locked], main_metric)
-    top = np.argsort(drops)[::-1][:5]
-    importance = [[names[j], float(drops[j])] for j in top]
+    top_all = np.argsort(drops)[::-1]
+    importance = [[names[j], float(drops[j])] for j in top_all[:5]]
+    importance_all = [[names[j], float(drops[j])] for j in top_all]
 
     # 6. explanations
     facts = data_facts(X, names, y, task)
     notes = explain_models(results, facts)
 
-    # 7. a clean report (plain numbers and text only, so it can be saved as JSON)
+    # 7. Build comprehensive evaluation dashboard data via evaluation.py
+    import evaluation as ev
+    eval_centre = ev.build_evaluation_centre(
+        X_dev=X[dev], y_dev=y[dev], X_train=X_train, X_test=X_test, y_test=y[locked],
+        task=task, names=names, labels=labels, results=results, fitted_models=fitted_models,
+        best_item=best, baseline_item=baseline_res, tune=tune, importance_all=importance_all
+    )
+
+    # 8. a clean report (plain numbers and text only, so it can be saved as JSON)
     return {
-        "task": task, "rows": int(len(y)), "tuned": tune,
+        "task": task, "rows": int(len(y)), "dev_rows": int(len(dev)), "test_rows": int(len(locked)),
+        "tuned": tune, "is_imbalanced": is_imbalanced,
         "score_name": score_name, "extra_name": extra_name,
         "best": best["name"],
-        "results": [{"name": r["name"], "score": r["score"], "spread": r["spread"],
-                     "extra": r["extra"], "train_score": r["train_score"],
-                     "seconds": r["seconds"], "vs_baseline": r["vs_baseline"],
+        "results": [{"name": r["name"], "base": r["base"], "setting": r["setting"],
+                     "score": r["score"], "spread": r["spread"],
+                     "min_score": r["min_score"], "max_score": r["max_score"],
+                     "fold_scores": r["fold_scores"],
+                     "extra": r["extra"], "extra_spread": r["extra_spread"],
+                     "fold_extra_scores": r["fold_extra_scores"],
+                     "train_score": r["train_score"],
+                     "seconds": r["seconds"], "fit_seconds": r.get("fit_seconds", 0.0),
+                     "vs_baseline": r["vs_baseline"], "extra_vs_baseline": r["extra_vs_baseline"],
+                     "default_score": r.get("default_score"), "tuned_score": r.get("tuned_score"),
+                     "tuning_history": r.get("tuning_history", []),
                      "tie": bool(r["tie"]), "notes": n}
                     for r, n in zip(results, notes)],
         "final_check": {"model": best["name"], "score": final_score, "cv_score": best["score"]},
         "importance": importance,
+        "importance_all": importance_all,
+        "evaluation_centre": eval_centre,
         "facts": facts, **extra,
     }
 

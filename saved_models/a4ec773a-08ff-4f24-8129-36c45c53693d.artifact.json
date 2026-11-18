@@ -1,0 +1,760 @@
+{
+  "integrity_hmac_sha256": "8dbc65a18b3bd320ee907391820cc3b714ad4f5bfdcab1591a806c3eec0af5c4",
+  "artifact": {
+    "format": "minilearn_model_artifact_v1",
+    "model_id": "a4ec773a-08ff-4f24-8129-36c45c53693d",
+    "display_name": "Ridge regression \u2013 Version 1",
+    "version": 1,
+    "created_at": "2026-11-18 20:04:04",
+    "dataset_info": {
+      "dataset_name": "house_prices.csv",
+      "dataset_id": "131254ae674c",
+      "total_rows_used": 140,
+      "dev_rows": 112,
+      "test_rows": 28,
+      "sampled_to_2000": false,
+      "target_column": "Sale_Price",
+      "task_type": "regression",
+      "problem_subtype": "Supervised Regression",
+      "raw_feature_names": [
+        "SqFt_Living",
+        "Total_Rooms",
+        "Bedrooms",
+        "Neighborhood"
+      ],
+      "encoded_feature_names": [
+        "SqFt_Living",
+        "Total_Rooms",
+        "Bedrooms",
+        "Neighborhood=Downtown",
+        "Neighborhood=North",
+        "Neighborhood=Suburb"
+      ],
+      "excluded_columns": []
+    },
+    "training_info": {
+      "model_name": "Ridge regression \u2013 Version 1",
+      "base_algorithm": "Ridge regression",
+      "full_model_name": "Ridge regression [alpha 0.1]",
+      "algorithm_description": "L2-regularised linear regression that penalises large weights (alpha * ||w||^2) to reduce variance and handle correlated features.",
+      "training_datetime": "2026-11-18 20:04:04",
+      "cv_duration_seconds": 0.0042,
+      "final_fit_duration_seconds": 0.0002,
+      "train_test_split": "80% Development (112 rows) / 20% Locked Held-Out Test (28 rows), random seed = 42",
+      "cv_configuration": "3 Repeats \u00d7 5-Fold Cross-Validation (15 folds total on 80% dev split)",
+      "tuning_enabled": true,
+      "tuning_history": [
+        {
+          "setting": "alpha 0.1",
+          "score": 0.9862,
+          "spread": 0.0014,
+          "extra": 16567.9693,
+          "train_score": 0.9882
+        },
+        {
+          "setting": "alpha 1",
+          "score": 0.9844,
+          "spread": 0.0017,
+          "extra": 17607.7411,
+          "train_score": 0.9867
+        },
+        {
+          "setting": "alpha 10",
+          "score": 0.9807,
+          "spread": 0.001,
+          "extra": 19722.2005,
+          "train_score": 0.9825
+        },
+        {
+          "setting": "alpha 100",
+          "score": 0.8678,
+          "spread": 0.0096,
+          "extra": 51582.0084,
+          "train_score": 0.8766
+        }
+      ],
+      "random_seed": 42,
+      "cv_score_name": "R2",
+      "cv_mean": 0.9855,
+      "cv_std": 0.0032,
+      "cv_min": 0.9798,
+      "cv_max": 0.9901,
+      "cv_extra_name": "RMSE",
+      "cv_extra_mean": 16435.0937,
+      "cv_train_score": 0.9881,
+      "generalization_gap": 0.0026,
+      "selection_status": "Alternative Evaluated Candidate",
+      "environment": {
+        "python_version": "3.14.5",
+        "numpy_version": "2.4.6",
+        "serialization_format": "MiniLearn Safe JSON+NumPy Artifact v1 (HMAC-SHA256 verified)"
+      }
+    },
+    "hyperparameters": {
+      "setting_label": "alpha 0.1",
+      "alpha": 0.1,
+      "fit_intercept": true
+    },
+    "preprocessing_pipeline": {
+      "raw_features": [
+        {
+          "name": "SqFt_Living",
+          "kind": "numeric",
+          "median": 2323.5,
+          "min_observed": 910.0,
+          "max_observed": 3553.0,
+          "default_median": 2323.5,
+          "missing_strategy": "Impute missing cells with training median (2324)"
+        },
+        {
+          "name": "Total_Rooms",
+          "kind": "numeric",
+          "median": 7.4,
+          "min_observed": 2.7,
+          "max_observed": 11.3,
+          "default_median": 7.4,
+          "missing_strategy": "Impute missing cells with training median (7.4)"
+        },
+        {
+          "name": "Bedrooms",
+          "kind": "numeric",
+          "median": 3.0,
+          "min_observed": 1.0,
+          "max_observed": 5.0,
+          "default_median": 3.0,
+          "missing_strategy": "Impute missing cells with training median (3)"
+        },
+        {
+          "name": "Neighborhood",
+          "kind": "categorical",
+          "options": [
+            "Downtown",
+            "North",
+            "Suburb"
+          ],
+          "default_mode": "Suburb",
+          "missing_strategy": "Impute with training mode ('Suburb') or zero-vector if unseen category"
+        }
+      ],
+      "form_spec": [
+        {
+          "name": "SqFt_Living",
+          "kind": "number",
+          "default": 2323.5
+        },
+        {
+          "name": "Total_Rooms",
+          "kind": "number",
+          "default": 7.4
+        },
+        {
+          "name": "Bedrooms",
+          "kind": "number",
+          "default": 3.0
+        },
+        {
+          "name": "Neighborhood",
+          "kind": "choice",
+          "options": [
+            "Downtown",
+            "North",
+            "Suburb"
+          ],
+          "default": "Suburb"
+        }
+      ],
+      "encoded_feature_names": [
+        "SqFt_Living",
+        "Total_Rooms",
+        "Bedrooms",
+        "Neighborhood=Downtown",
+        "Neighborhood=North",
+        "Neighborhood=Suburb"
+      ],
+      "scaler": {
+        "type": "StandardScaler (Z-score standardization fitted on 80% development split)",
+        "mean": [
+          2299.214285714286,
+          7.167857142857137,
+          3.0625,
+          0.29464285714285715,
+          0.35714285714285715,
+          0.3482142857142857
+        ],
+        "std": [
+          771.347492432323,
+          2.419312708103654,
+          1.2194938206368364,
+          0.455882050400705,
+          0.47915742374995446,
+          0.476404341855504
+        ]
+      },
+      "target_encoding": {
+        "target_column": "Sale_Price",
+        "task": "regression"
+      }
+    },
+    "evaluation_metrics": {
+      "task": "regression",
+      "r2": 0.9791,
+      "mae": 17007.3355,
+      "mse": 375491718.6848,
+      "rmse": 19377.6087,
+      "mean_residual": -4742.9716,
+      "median_residual": -4786.5092,
+      "std_residual": 18788.1862,
+      "narrative": "Mean residual is -4742.972 and median residual is -4786.509 (46.4% positive/underpredicted, 53.6% negative/overpredicted). Average absolute error (MAE) is 17,007.335, while RMSE is 19,377.609 (ratio RMSE/MAE = 1.14; ratios well above 1.25 indicate large outlier errors). Residual spread is relatively uniform across the prediction range (r = -0.11).",
+      "feature_importance": [
+        [
+          "SqFt_Living",
+          1.3022
+        ],
+        [
+          "Bedrooms",
+          0.0551
+        ],
+        [
+          "Neighborhood=Suburb",
+          0.0318
+        ],
+        [
+          "Neighborhood=Downtown",
+          0.0234
+        ],
+        [
+          "Total_Rooms",
+          0.0041
+        ],
+        [
+          "Neighborhood=North",
+          -0.0002
+        ]
+      ]
+    },
+    "eval_reference": {
+      "X_test_scaled": [
+        [
+          -1.03094,
+          -1.02007,
+          -0.87126,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          0.96427,
+          0.92264,
+          0.76876,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          -0.75351,
+          -0.77206,
+          -0.87126,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          0.22012,
+          0.17862,
+          -0.05125,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          0.92019,
+          0.83997,
+          0.76876,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          -1.18003,
+          -1.26807,
+          -0.87126,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          -1.80102,
+          -1.84675,
+          -1.69128,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          1.14058,
+          1.0053,
+          0.76876,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          0.60645,
+          0.71596,
+          0.76876,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          0.51311,
+          0.42663,
+          0.76876,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          1.28189,
+          1.04664,
+          1.58877,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          0.57534,
+          0.55063,
+          0.76876,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          0.61812,
+          0.71596,
+          0.76876,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          0.58182,
+          0.34396,
+          0.76876,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          -1.61304,
+          -1.80541,
+          -1.69128,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          -1.18262,
+          -1.3094,
+          -0.87126,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          -0.52533,
+          -0.85473,
+          -0.87126,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          1.51396,
+          1.33598,
+          1.58877,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          1.08224,
+          1.08797,
+          0.76876,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          -0.23752,
+          -0.23472,
+          -0.05125,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          0.30438,
+          0.46796,
+          -0.05125,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          0.39124,
+          0.34396,
+          0.76876,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          0.17474,
+          0.26129,
+          -0.05125,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          1.37264,
+          1.45998,
+          1.58877,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          -0.18567,
+          -0.44139,
+          -0.05125,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ],
+        [
+          -0.40606,
+          -0.48272,
+          -0.05125,
+          -0.64631,
+          -0.74536,
+          1.36814
+        ],
+        [
+          0.79184,
+          0.79863,
+          0.76876,
+          1.54724,
+          -0.74536,
+          -0.73092
+        ],
+        [
+          0.57275,
+          0.83997,
+          0.76876,
+          -0.64631,
+          1.34164,
+          -0.73092
+        ]
+      ],
+      "y_test": [
+        335059.9,
+        582861.95,
+        385880.64,
+        552212.95,
+        662771.36,
+        283882.77,
+        297052.83,
+        642514.15,
+        637276.1,
+        526631.62,
+        681082.06,
+        602822.91,
+        566489.45,
+        623407.74,
+        213030.9,
+        348506.29,
+        404314.27,
+        675065.98,
+        676336.84,
+        511206.45,
+        599028.39,
+        580040.73,
+        502895.5,
+        662700.1,
+        469146.48,
+        440021.3,
+        646886.11,
+        597694.44
+      ],
+      "sample_records": [
+        {
+          "row_index": 91,
+          "inputs": {
+            "SqFt_Living": "1504",
+            "Total_Rooms": "4.7",
+            "Bedrooms": "2",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "335059.90"
+        },
+        {
+          "row_index": 104,
+          "inputs": {
+            "SqFt_Living": "3043",
+            "Total_Rooms": "9.4",
+            "Bedrooms": "4",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "582861.95"
+        },
+        {
+          "row_index": 26,
+          "inputs": {
+            "SqFt_Living": "1718",
+            "Total_Rooms": "5.3",
+            "Bedrooms": "2",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "385880.64"
+        },
+        {
+          "row_index": 57,
+          "inputs": {
+            "SqFt_Living": "2469",
+            "Total_Rooms": "7.6",
+            "Bedrooms": "3",
+            "Neighborhood": "North"
+          },
+          "actual": "552212.95"
+        },
+        {
+          "row_index": 118,
+          "inputs": {
+            "SqFt_Living": "3009",
+            "Total_Rooms": "9.2",
+            "Bedrooms": "4",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "662771.36"
+        },
+        {
+          "row_index": 79,
+          "inputs": {
+            "SqFt_Living": "1389",
+            "Total_Rooms": "4.1",
+            "Bedrooms": "2",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "283882.77"
+        },
+        {
+          "row_index": 5,
+          "inputs": {
+            "SqFt_Living": "910",
+            "Total_Rooms": "2.7",
+            "Bedrooms": "1",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "297052.83"
+        },
+        {
+          "row_index": 3,
+          "inputs": {
+            "SqFt_Living": "3179",
+            "Total_Rooms": "9.6",
+            "Bedrooms": "4",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "642514.15"
+        },
+        {
+          "row_index": 125,
+          "inputs": {
+            "SqFt_Living": "2767",
+            "Total_Rooms": "8.9",
+            "Bedrooms": "4",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "637276.10"
+        },
+        {
+          "row_index": 29,
+          "inputs": {
+            "SqFt_Living": "2695",
+            "Total_Rooms": "8.2",
+            "Bedrooms": "4",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "526631.62"
+        },
+        {
+          "row_index": 38,
+          "inputs": {
+            "SqFt_Living": "3288",
+            "Total_Rooms": "9.7",
+            "Bedrooms": "5",
+            "Neighborhood": "North"
+          },
+          "actual": "681082.06"
+        },
+        {
+          "row_index": 47,
+          "inputs": {
+            "SqFt_Living": "2743",
+            "Total_Rooms": "8.5",
+            "Bedrooms": "4",
+            "Neighborhood": "North"
+          },
+          "actual": "602822.91"
+        },
+        {
+          "row_index": 25,
+          "inputs": {
+            "SqFt_Living": "2776",
+            "Total_Rooms": "8.9",
+            "Bedrooms": "4",
+            "Neighborhood": "North"
+          },
+          "actual": "566489.45"
+        },
+        {
+          "row_index": 34,
+          "inputs": {
+            "SqFt_Living": "2748",
+            "Total_Rooms": "8.0",
+            "Bedrooms": "4",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "623407.74"
+        },
+        {
+          "row_index": 94,
+          "inputs": {
+            "SqFt_Living": "1055",
+            "Total_Rooms": "2.8",
+            "Bedrooms": "1",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "213030.90"
+        },
+        {
+          "row_index": 1,
+          "inputs": {
+            "SqFt_Living": "1387",
+            "Total_Rooms": "4.0",
+            "Bedrooms": "2",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "348506.29"
+        },
+        {
+          "row_index": 97,
+          "inputs": {
+            "SqFt_Living": "1894",
+            "Total_Rooms": "5.1",
+            "Bedrooms": "2",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "404314.27"
+        },
+        {
+          "row_index": 93,
+          "inputs": {
+            "SqFt_Living": "3467",
+            "Total_Rooms": "10.4",
+            "Bedrooms": "5",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "675065.98"
+        },
+        {
+          "row_index": 21,
+          "inputs": {
+            "SqFt_Living": "3134",
+            "Total_Rooms": "9.8",
+            "Bedrooms": "4",
+            "Neighborhood": "North"
+          },
+          "actual": "676336.84"
+        },
+        {
+          "row_index": 83,
+          "inputs": {
+            "SqFt_Living": "2116",
+            "Total_Rooms": "6.6",
+            "Bedrooms": "3",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "511206.45"
+        },
+        {
+          "row_index": 51,
+          "inputs": {
+            "SqFt_Living": "2534",
+            "Total_Rooms": "8.3",
+            "Bedrooms": "3",
+            "Neighborhood": "Downtown"
+          },
+          "actual": "599028.39"
+        },
+        {
+          "row_index": 88,
+          "inputs": {
+            "SqFt_Living": "2601",
+            "Total_Rooms": "8.0",
+            "Bedrooms": "4",
+            "Neighborhood": "North"
+          },
+          "actual": "580040.73"
+        },
+        {
+          "row_index": 119,
+          "inputs": {
+            "SqFt_Living": "2434",
+            "Total_Rooms": "7.8",
+            "Bedrooms": "3",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "502895.50"
+        },
+        {
+          "row_index": 14,
+          "inputs": {
+            "SqFt_Living": "3358",
+            "Total_Rooms": "10.7",
+            "Bedrooms": "5",
+            "Neighborhood": "Suburb"
+          },
+          "actual": "662700.10"
+        },
+        {
+          "row_index": 108,
+          "inputs": {
+            "SqFt_Living": "2156",
+            "Total_Rooms": "6.1",
+            "Bedrooms": "3",
+            "Neighborhood": "North"
+          },
+          "actual": "469146.48"
+        }
+      ]
+    },
+    "class_labels": [],
+    "model_state": {
+      "class": "RidgeRegression",
+      "alpha": 0.1,
+      "w": [
+        510507.6233928573,
+        121775.35698682233,
+        -6083.884315996165,
+        27252.355664050945,
+        19273.19447608772,
+        -780.9426758016351,
+        -17657.49846466541
+      ]
+    }
+  }
+}
